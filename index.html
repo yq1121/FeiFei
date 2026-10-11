@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>贪吃菲菲</title>
+<style>
+    * {
+        box-sizing: border-box;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    body {
+        margin: 0;
+        padding: 12px;
+        background: #111;
+        color: #fff;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 100vh;
+        overscroll-behavior: none;
+    }
+
+    h2 {
+        margin: 8px 0 14px;
+        font-size: 22px;
+    }
+
+    .game-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+        width: 100%;
+        max-width: 640px;
+    }
+
+    canvas {
+        width: 100%;
+        max-width: 500px;
+        height: auto;
+        border: 3px solid #444;
+        background: #000;
+        touch-action: none;
+        display: block;
+    }
+
+    .panel {
+        width: 100%;
+        max-width: 500px;
+        background: #1c1c1c;
+        border-radius: 12px;
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 16px;
+    }
+
+    button {
+        background: #2563eb;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 12px;
+        font-size: 16px;
+        cursor: pointer;
+        width: 100%;
+    }
+
+    button:active {
+        background: #1d4ed8;
+    }
+
+    input[type="range"] {
+        width: 160px;
+    }
+
+    .tip {
+        font-size: 13px;
+        color: #bbb;
+        line-height: 1.5;
+    }
+</style>
+</head>
+
+<body>
+
+<h2>贪吃菲菲</h2>
+
+<div class="game-wrapper">
+    <canvas id="gameCanvas" width="500" height="625"></canvas>
+
+    <div class="panel">
+        <div class="row">
+            <span>分数：<strong id="score">0</strong></span>
+            <span>状态：<strong id="status">游戏中</strong></span>
+        </div>
+
+        <div class="row">
+            <span>速度</span>
+            <input id="speedRange" type="range" min="60" max="260" value="140" />
+            <span id="speedText">140ms</span>
+        </div>
+
+        <button id="restartBtn">重新开始游戏</button>
+
+        <div class="tip">
+            <br />
+            
+        </div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+const scoreDom = document.getElementById("score");
+const statusDom = document.getElementById("status");
+const speedRange = document.getElementById("speedRange");
+const speedText = document.getElementById("speedText");
+const restartBtn = document.getElementById("restartBtn");
+
+// 每格大小：25px
+const blockSize = 25;
+
+// 游戏区域：20 列 × 25 行
+const cols = 20;
+const rows = 25;
+
+const canvasWidth = cols * blockSize;   // 500
+const canvasHeight = rows * blockSize;  // 625
+
+canvas.width = canvasWidth;
+canvas.height = canvasHeight;
+
+// ========== 开发时在这里配置图片 ==========
+const snakeHeadSrc = "peng.jpg";
+const snakeBodySrc = "bian.jpg";
+const foodSrc      = "bian.jpg";
+// =======================================
+
+// 加载图片
+function loadImage(src) {
+    const img = new Image();
+    img.src = src;
+    img.onerror = function () {
+        console.warn("图片加载失败，已降级为纯色块：" + src);
+    };
+    return img;
+}
+
+const snakeHeadImage = loadImage(snakeHeadSrc);
+const snakeBodyImage = loadImage(snakeBodySrc);
+const foodImage      = loadImage(foodSrc);
+
+let snake = [];
+let dx = blockSize;
+let dy = 0;
+let food = {};
+let score = 0;
+let gameOver = false;
+let gameTimer = null;
+let speed = 140;
+
+// 触屏滑动
+let touchStartX = 0;
+let touchStartY = 0;
+const touchThreshold = 25;
+
+function initGame() {
+    gameOver = false;
+    statusDom.textContent = "游戏中";
+    score = 0;
+    scoreDom.textContent = score;
+
+    // 初始方向向右
+    dx = blockSize;
+    dy = 0;
+
+    // 初始蛇：3节身体
+    snake = [
+        { x: 5 * blockSize, y: 12 * blockSize },
+        { x: 4 * blockSize, y: 12 * blockSize },
+        { x: 3 * blockSize, y: 12 * blockSize }
+    ];
+
+    createFood();
+    clearInterval(gameTimer);
+    gameTimer = setInterval(gameLoop, speed);
+}
+
+function createFood() {
+    let newFood;
+
+    do {
+        newFood = {
+            x: Math.floor(Math.random() * cols) * blockSize,
+            y: Math.floor(Math.random() * rows) * blockSize
+        };
+    } while (isOnSnake(newFood));
+
+    food = newFood;
+}
+
+function isOnSnake(pos) {
+    return snake.some(seg => seg.x === pos.x && seg.y === pos.y);
+}
+
+function gameLoop() {
+    if (gameOver) return;
+
+    const head = { x: snake[0].x + dx, y: snake[0].y + dy };
+
+    // 撞墙
+    if (
+        head.x < 0 ||
+        head.x >= canvasWidth ||
+        head.y < 0 ||
+        head.y >= canvasHeight
+    ) {
+        gameOver = true;
+        statusDom.textContent = "游戏结束（撞墙）";
+        clearInterval(gameTimer);
+        draw();
+        return;
+    }
+
+    // 撞自己
+    if (snake.some(seg => seg.x === head.x && seg.y === head.y)) {
+        gameOver = true;
+        statusDom.textContent = "游戏结束（撞到身体）";
+        clearInterval(gameTimer);
+        draw();
+        return;
+    }
+
+    snake.unshift(head);
+
+    if (head.x === food.x && head.y === food.y) {
+        score += 10;
+        scoreDom.textContent = score;
+        createFood();
+    } else {
+        snake.pop();
+    }
+
+    draw();
+}
+
+function draw() {
+    // 清屏
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    // 画网格（可选，去掉也可以）
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = 1;
+    for (let c = 1; c < cols; c++) {
+        ctx.beginPath();
+        ctx.moveTo(c * blockSize, 0);
+        ctx.lineTo(c * blockSize, canvasHeight);
+        ctx.stroke();
+    }
+    for (let r = 1; r < rows; r++) {
+        ctx.beginPath();
+        ctx.moveTo(0, r * blockSize);
+        ctx.lineTo(canvasWidth, r * blockSize);
+        ctx.stroke();
+    }
+
+    // 画食物
+    if (foodImage && foodImage.complete && foodImage.naturalWidth > 0) {
+        ctx.drawImage(foodImage, food.x, food.y, blockSize, blockSize);
+    } else {
+        ctx.fillStyle = "#ff4d4d";
+        ctx.fillRect(food.x + 2, food.y + 2, blockSize - 4, blockSize - 4);
+    }
+
+    // 画蛇
+    for (let i = snake.length - 1; i >= 0; i--) {
+        const seg = snake[i];
+
+        if (i === 0) {
+            // 蛇头
+            if (snakeHeadImage && snakeHeadImage.complete && snakeHeadImage.naturalWidth > 0) {
+                ctx.drawImage(snakeHeadImage, seg.x, seg.y, blockSize, blockSize);
+            } else {
+                ctx.fillStyle = "#39ff14";
+                ctx.fillRect(seg.x + 1, seg.y + 1, blockSize - 2, blockSize - 2);
+            }
+        } else {
+            // 蛇身体
+            if (snakeBodyImage && snakeBodyImage.complete && snakeBodyImage.naturalWidth > 0) {
+                ctx.drawImage(snakeBodyImage, seg.x, seg.y, blockSize, blockSize);
+            } else {
+                ctx.fillStyle = "#4ade80";
+                ctx.fillRect(seg.x + 3, seg.y + 3, blockSize - 6, blockSize - 6);
+            }
+        }
+    }
+
+    // 游戏结束遮罩文字
+    if (gameOver) {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 30px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText("游戏结束", canvasWidth / 2, canvasHeight / 2 - 10);
+
+        ctx.font = "16px system-ui";
+        ctx.fillText("点击“重新开始游戏”继续", canvasWidth / 2, canvasHeight / 2 + 24);
+    }
+}
+
+// 电脑键盘
+document.addEventListener("keydown", function (e) {
+    if (gameOver) return;
+
+    switch (e.key) {
+        case "ArrowUp":
+            if (dy !== blockSize) {
+                dx = 0;
+                dy = -blockSize;
+            }
+            break;
+        case "ArrowDown":
+            if (dy !== -blockSize) {
+                dx = 0;
+                dy = blockSize;
+            }
+            break;
+        case "ArrowLeft":
+            if (dx !== blockSize) {
+                dx = -blockSize;
+                dy = 0;
+            }
+            break;
+        case "ArrowRight":
+            if (dx !== -blockSize) {
+                dx = blockSize;
+                dy = 0;
+            }
+            break;
+    }
+});
+
+// 手机触屏开始
+canvas.addEventListener("touchstart", function (e) {
+    e.preventDefault();
+    const touch = e.touches[0];
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
+}, { passive: false });
+
+// 手机触屏移动
+canvas.addEventListener("touchmove", function (e) {
+    e.preventDefault();
+}, { passive: false });
+
+// 手机触屏结束
+canvas.addEventListener("touchend", function (e) {
+    if (gameOver) return;
+
+    const touch = e.changedTouches[0];
+    const endX = touch.clientX;
+    const endY = touch.clientY;
+
+    const diffX = endX - touchStartX;
+    const diffY = endY - touchStartY;
+
+    if (Math.abs(diffX) > Math.abs(diffY)) {
+        // 水平滑动
+        if (Math.abs(diffX) > touchThreshold) {
+            if (diffX > 0 && dx !== -blockSize) {
+                dx = blockSize;
+                dy = 0;
+            } else if (diffX < 0 && dx !== blockSize) {
+                dx = -blockSize;
+                dy = 0;
+            }
+        }
+    } else {
+        // 垂直滑动
+        if (Math.abs(diffY) > touchThreshold) {
+            if (diffY > 0 && dy !== -blockSize) {
+                dx = 0;
+                dy = blockSize;
+            } else if (diffY < 0 && dy !== blockSize) {
+                dx = 0;
+                dy = -blockSize;
+            }
+        }
+    }
+});
+
+// 速度调节
+speedRange.addEventListener("input", function () {
+    speed = Number(this.value);
+    speedText.textContent = speed + "ms";
+
+    if (!gameOver) {
+        clearInterval(gameTimer);
+        gameTimer = setInterval(gameLoop, speed);
+    }
+});
+
+// 重新开始
+restartBtn.addEventListener("click", initGame);
+
+// 图片加载后重绘
+snakeHeadImage.onload = draw;
+snakeBodyImage.onload = draw;
+foodImage.onload = draw;
+
+// 启动
+initGame();
+</script>
+
+</body>
+</html>
